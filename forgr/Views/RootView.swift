@@ -1,0 +1,83 @@
+import SwiftUI
+
+struct RootView: View {
+    @EnvironmentObject private var network: NetworkMonitor
+    @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var store: FitnessStore
+    @State private var showingOfflineAlert = false
+
+    let onRestart: () -> Void
+
+    var body: some View {
+        Group {
+            if auth.isAuthenticated {
+                MainTabView()
+                    .environmentObject(store)
+                    .task {
+                        // SplashGateView already ran the initial load; only fetch here
+                        // for a session that starts mid-run (e.g. a fresh login).
+                        if !store.hasLoadedOnce { await store.loadAll() }
+                    }
+            } else {
+                LoginView()
+            }
+        }
+        .environmentObject(auth)
+        .onChange(of: auth.isAuthenticated) { _, isAuthenticated in
+            if !isAuthenticated { store.clearCache() }
+        }
+        .onChange(of: network.isConnected) { _, isConnected in
+            // Only ever opens the alert on a real drop — regaining connectivity in the
+            // background never auto-dismisses it; the user must tap Retry themselves.
+            if isConnected == false { showingOfflineAlert = true }
+        }
+        .alert("No Internet Connection", isPresented: $showingOfflineAlert) {
+            Button("Retry") { onRestart() }
+        } message: {
+            Text("This app requires an internet connection. Please check your connection and try again.")
+        }
+    }
+}
+
+struct MainTabView: View {
+    @EnvironmentObject private var router: TabRouter
+    @EnvironmentObject private var store: FitnessStore
+
+    var body: some View {
+        TabView(selection: $router.selection) {
+            DashboardView()
+                .tabItem { Label("Home", systemImage: "house.fill") }
+                .tag(AppTab.home)
+            ExercisesView()
+                .tabItem { Label("Exercises", systemImage: "figure.strengthtraining.traditional") }
+                .tag(AppTab.exercises)
+            PlansView()
+                .tabItem { Label("Plans", systemImage: "list.clipboard.fill") }
+                .tag(AppTab.plans)
+            SessionTabView()
+                .tabItem { Label("Session", systemImage: "stopwatch.fill") }
+                .tag(AppTab.session)
+        }
+        // Mutations apply locally and sync in the background (see FitnessStore); if a
+        // sync call ends up failing, this is where that surfaces — after the fact.
+        .alert(
+            "Something Went Wrong",
+            isPresented: Binding(
+                get: { store.errorMessage != nil },
+                set: { if !$0 { store.errorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { store.errorMessage = nil }
+        } message: {
+            Text(store.errorMessage ?? "")
+        }
+    }
+}
+
+#Preview {
+    RootView(onRestart: {})
+        .environmentObject(NetworkMonitor())
+        .environmentObject(AuthStore())
+        .environmentObject(FitnessStore())
+        .environmentObject(TabRouter())
+}
