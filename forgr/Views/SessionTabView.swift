@@ -3,8 +3,7 @@ import SwiftUI
 struct SessionTabView: View {
     @EnvironmentObject private var store: FitnessStore
     @EnvironmentObject private var router: TabRouter
-    @State private var showingHistory = false
-    @State private var sessionToDelete: WorkoutSession?
+    @Environment(\.pageTint) private var pageTint
 
     var body: some View {
         NavigationStack {
@@ -27,14 +26,6 @@ struct SessionTabView: View {
             }
             .navigationTitle("Session")
             .navigationBarTitleDisplayMode(.inline)
-            .sheet(isPresented: $showingHistory) {
-                NavigationStack {
-                    HistoryListView(sessions: completedSessions)
-                }
-            }
-            .deleteConfirmation($sessionToDelete, title: "Delete Session?") { session in
-                store.deleteSession(session)
-            }
             .onChange(of: router.selection) { _, newSelection in
                 // TabView keeps every tab's view alive, so this fires even while
                 // Session isn't the visible tab — exactly when we want to catch a
@@ -57,7 +48,7 @@ struct SessionTabView: View {
                     )
                 } else {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Start a Workout")
+                        Label("Start a Workout", systemImage: "stopwatch.fill")
                             .font(.title3.bold())
                             .padding(.horizontal)
 
@@ -76,62 +67,11 @@ struct SessionTabView: View {
                                         Spacer()
                                         Image(systemName: "play.circle.fill")
                                             .font(.title2)
-                                            .foregroundStyle(Color.accentColor)
+                                            .foregroundStyle(pageTint)
                                     }
                                     .cardStyle(cornerRadius: 16)
                                 }
                                 .buttonStyle(.plain)
-                            }
-                        }
-                        .padding(.horizontal)
-                    }
-                }
-
-                if !completedSessions.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Text("History")
-                                .font(.title3.bold())
-                            Spacer()
-                            Button("See All") { showingHistory = true }
-                                .font(.subheadline)
-                        }
-                        .padding(.horizontal)
-
-                        VStack(spacing: 10) {
-                            ForEach(completedSessions.prefix(3)) { session in
-                                NavigationLink {
-                                    SessionDetailView(sessionId: session.id)
-                                } label: {
-                                    HStack {
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(session.plan_name).font(.subheadline.weight(.medium))
-                                            HStack(spacing: 4) {
-                                                Text(DateFormatting.displayString(from: session.captured_at))
-                                                if let completedAt = session.completed_at,
-                                                   let duration = DateFormatting.durationString(from: session.captured_at, to: completedAt) {
-                                                    Text("·")
-                                                    Text(duration)
-                                                }
-                                            }
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                        }
-                                        Spacer()
-                                        Image(systemName: "chevron.right")
-                                            .font(.caption)
-                                            .foregroundStyle(.tertiary)
-                                    }
-                                    .cardStyle(cornerRadius: 16)
-                                }
-                                .buttonStyle(.plain)
-                                .contextMenu {
-                                    Button(role: .destructive) {
-                                        sessionToDelete = session
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
-                                }
                             }
                         }
                         .padding(.horizontal)
@@ -141,64 +81,6 @@ struct SessionTabView: View {
             .padding(.vertical)
         }
         .background(Color(.systemGroupedBackground))
-    }
-
-    private var completedSessions: [WorkoutSession] {
-        store.sessions.filter { $0.status == .completed }
-    }
-}
-
-struct HistoryListView: View {
-    @EnvironmentObject private var store: FitnessStore
-    let sessions: [WorkoutSession]
-    @State private var sessionToDelete: WorkoutSession?
-
-    var body: some View {
-        Group {
-            if sessions.isEmpty {
-                EmptyState(
-                    systemImage: "clock.arrow.circlepath",
-                    title: "No History Yet",
-                    subtitle: "Completed workouts will show up here."
-                )
-            } else {
-                List {
-                    ForEach(sessions) { session in
-                        NavigationLink {
-                            SessionDetailView(sessionId: session.id)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(session.plan_name).font(.subheadline.weight(.medium))
-                                HStack(spacing: 4) {
-                                    Text(DateFormatting.displayString(from: session.captured_at))
-                                    if let completedAt = session.completed_at,
-                                       let duration = DateFormatting.durationString(from: session.captured_at, to: completedAt) {
-                                        Text("·")
-                                        Text(duration)
-                                    }
-                                }
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            }
-                        }
-                        .swipeActions {
-                            Button(role: .destructive) {
-                                sessionToDelete = session
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                        }
-                    }
-                }
-                .refreshable { await store.refreshSessions() }
-            }
-        }
-        .navigationTitle("History")
-        .navigationBarTitleDisplayMode(.inline)
-        .deleteConfirmation($sessionToDelete, title: "Delete Session?") { session in
-            store.deleteSession(session)
-        }
-        .task { await store.refreshSessions() }
     }
 }
 

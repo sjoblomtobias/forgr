@@ -3,17 +3,7 @@
     "linear-gradient" : [
       "extended-srgb:1.00000,0.55294,0.15686,1.00000",
       "extended-srgb:1.00000,0.21961,0.23529,1.00000"
-    ],
-    "orientation" : {
-      "start" : {
-        "x" : 0.5,
-        "y" : 0
-      },
-      "stop" : {
-        "x" : 0.5,
-        "y" : 0.7
-      }
-    }
+    ]
   },
   "groups" : [
     {

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LoginView: View {
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var deepLink: DeepLinkRouter
     @State private var username = ""
     @State private var password = ""
     @FocusState private var focusedField: Field?
@@ -9,20 +10,35 @@ struct LoginView: View {
     enum Field { case username, password }
 
     var body: some View {
+        NavigationStack {
+            loginContent
+        }
+    }
+
+    private var loginContent: some View {
         VStack(spacing: 28) {
             Spacer()
 
             VStack(spacing: 12) {
-                Image.appIcon
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 72, height: 72)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                Text("forgr")
-                    .font(.largeTitle.bold())
-                Text("Sign in to your account")
+                HStack(spacing: 10) {
+                    Image.appIcon
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 72, height: 72)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    Image(systemName: "xmark")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                    Image.datavetenskapLogo
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 72, height: 72)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                Text("Sign in to your datavetenskap.com account")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
             }
 
             VStack(spacing: 14) {
@@ -33,16 +49,14 @@ struct LoginView: View {
                     .focused($focusedField, equals: .username)
                     .submitLabel(.next)
                     .onSubmit { focusedField = .password }
-                    .padding(14)
-                    .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 14))
+                    .fieldIcon("person.fill")
 
                 SecureField("Password", text: $password)
                     .textContentType(.password)
                     .focused($focusedField, equals: .password)
                     .submitLabel(.go)
                     .onSubmit { Task { await submit() } }
-                    .padding(14)
-                    .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 14))
+                    .fieldIcon("lock.fill")
             }
             .padding(.horizontal, 24)
 
@@ -74,11 +88,27 @@ struct LoginView: View {
             .disabled(!canSubmit || auth.isLoggingIn)
             .padding(.horizontal, 24)
 
+            NavigationLink {
+                RegisterView()
+            } label: {
+                HStack(spacing: 4) {
+                    Text("Don't have an account?")
+                        .foregroundStyle(Color(.lightGray))
+                    Text("Create one")
+                        .foregroundStyle(.white)
+                        .fontWeight(.semibold)
+                }
+            }
+            .font(.subheadline)
+
             Spacer()
             Spacer()
         }
         .contentShape(Rectangle())
         .onTapGesture { focusedField = nil }
+        .navigationDestination(item: $deepLink.pendingInviteCode) { code in
+            RegisterView(inviteCode: code)
+        }
     }
 
     private var canSubmit: Bool {
@@ -93,5 +123,7 @@ struct LoginView: View {
 }
 
 #Preview {
-    LoginView().environmentObject(AuthStore())
+    LoginView()
+        .environmentObject(AuthStore())
+        .environmentObject(DeepLinkRouter())
 }

@@ -42,19 +42,32 @@ struct RootView: View {
 struct MainTabView: View {
     @EnvironmentObject private var router: TabRouter
     @EnvironmentObject private var store: FitnessStore
+    @EnvironmentObject private var themeStore: ThemeStore
+
+    private func color(for tab: AppTab) -> Color {
+        themeStore.theme.color(for: tab.domain)
+    }
 
     var body: some View {
         TabView(selection: $router.selection) {
             DashboardView()
+                .tint(color(for: .home))
+                .environment(\.pageTint, color(for: .home))
                 .tabItem { Label("Home", systemImage: "house.fill") }
                 .tag(AppTab.home)
             ExercisesView()
+                .tint(color(for: .exercises))
+                .environment(\.pageTint, color(for: .exercises))
                 .tabItem { Label("Exercises", systemImage: "figure.strengthtraining.traditional") }
                 .tag(AppTab.exercises)
             PlansView()
+                .tint(color(for: .plans))
+                .environment(\.pageTint, color(for: .plans))
                 .tabItem { Label("Plans", systemImage: "list.clipboard.fill") }
                 .tag(AppTab.plans)
             SessionTabView()
+                .tint(color(for: .session))
+                .environment(\.pageTint, color(for: .session))
                 .tabItem { Label("Session", systemImage: "stopwatch.fill") }
                 .tag(AppTab.session)
         }
@@ -80,4 +93,5 @@ struct MainTabView: View {
         .environmentObject(AuthStore())
         .environmentObject(FitnessStore())
         .environmentObject(TabRouter())
+        .environmentObject(ThemeStore())
 }

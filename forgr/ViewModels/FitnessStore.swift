@@ -363,7 +363,7 @@ final class FitnessStore: ObservableObject {
         let id = Self.tempId()
         let placeholder = WorkoutPlan(
             id: id, name: name, created_at: Self.now(), updated_at: Self.now(), user_id: "",
-            exercises: optimisticPlanExercises(planId: id, inputs: exerciseInputs)
+            exercises: optimisticPlanExercises(planId: id, inputs: exerciseInputs), position: plans.count
         )
         plans.append(placeholder)
 
@@ -396,6 +396,31 @@ final class FitnessStore: ObservableObject {
                 if let index = plans.firstIndex(where: { $0.id == id }) {
                     plans[index] = previous
                 }
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    /// Applies a new manual order (via `position`) to the top-level plans list — e.g.
+    /// after a drag-to-reorder in PlansView. Mirrors `reorderExerciseGroups`.
+    func reorderPlans(_ orderedIds: [String]) {
+        let previous = plans
+        plans = orderedIds.enumerated().compactMap { position, id in
+            guard var plan = plans.first(where: { $0.id == id }) else { return nil }
+            plan.position = position
+            return plan
+        }
+
+        runInBackground { [self] in
+            do {
+                for (position, id) in orderedIds.enumerated() {
+                    let plan = try await client.updateWorkoutPlan(id: id, position: position)
+                    if let index = plans.firstIndex(where: { $0.id == id }) {
+                        plans[index] = plan
+                    }
+                }
+            } catch {
+                plans = previous
                 errorMessage = error.localizedDescription
             }
         }

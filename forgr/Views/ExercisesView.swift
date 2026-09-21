@@ -3,6 +3,7 @@ import Charts
 
 struct ExercisesView: View {
     @EnvironmentObject private var store: FitnessStore
+    @Environment(\.pageTint) private var pageTint
     @State private var showingAdd = false
     @State private var showingManageGroups = false
     @State private var searchText = ""
@@ -88,7 +89,7 @@ struct ExercisesView: View {
                                         NavigationLink(value: exercise) {
                                             HStack(spacing: 12) {
                                                 Image(systemName: "figure.strengthtraining.traditional")
-                                                    .foregroundStyle(Color.accentColor)
+                                                    .foregroundStyle(pageTint)
                                                     .frame(width: 22)
                                                 Text(exercise.name)
                                             }
@@ -324,11 +325,13 @@ struct ExerciseGroupFormView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Group Name") {
+                Section {
                     TextField("e.g. Push Day", text: $name)
                         .focused($isFocused)
                         .submitLabel(.done)
                         .onSubmit { save() }
+                } header: {
+                    Label("Group Name", systemImage: "square.stack.3d.up")
                 }
             }
             .navigationTitle(group == nil ? "New Group" : "Rename Group")
@@ -376,20 +379,24 @@ struct ExerciseFormView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Exercise Name") {
+                Section {
                     TextField("e.g. Bench Press", text: $name)
                         .focused($isFocused)
                         .submitLabel(.done)
                         .onSubmit { save() }
+                } header: {
+                    Label("Exercise Name", systemImage: "figure.strengthtraining.traditional")
                 }
                 if !store.exerciseGroups.isEmpty {
-                    Section("Group") {
+                    Section {
                         Picker("Group", selection: $groupId) {
                             Text("Default").tag(Optional<String>.none)
                             ForEach(store.exerciseGroups.sorted { $0.position < $1.position }) { group in
                                 Text(group.name).tag(Optional(group.id))
                             }
                         }
+                    } header: {
+                        Label("Group", systemImage: "square.stack.3d.up")
                     }
                 }
                 Section {

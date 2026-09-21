@@ -28,6 +28,7 @@ struct SessionEditor: View {
     let session: WorkoutSession
 
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.pageTint) private var pageTint
     @State private var groups: [ExerciseSetGroup] = []
     @State private var autoSaveTask: Task<Void, Never>?
     @State private var hasUnsavedChanges = false
@@ -117,7 +118,7 @@ struct SessionEditor: View {
                             .font(.headline)
                             .frame(maxWidth: .infinity)
                     }
-                    .listRowBackground(Color.accentColor)
+                    .listRowBackground(pageTint)
                     .foregroundStyle(.white)
                 }
 
@@ -131,6 +132,7 @@ struct SessionEditor: View {
                 }
             }
         }
+        .dismissesKeyboardOnBackgroundTap()
         .navigationTitle(session.plan_name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -322,12 +324,13 @@ struct SessionEditor: View {
 
 struct SessionTimerView: View {
     let startDate: Date
+    @Environment(\.pageTint) private var pageTint
 
     var body: some View {
         TimelineView(.periodic(from: startDate, by: 1)) { context in
             Text(Self.formatted(context.date.timeIntervalSince(startDate)))
                 .font(.system(size: 40, weight: .bold, design: .rounded).monospacedDigit())
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(pageTint)
         }
     }
 
@@ -386,7 +389,6 @@ struct SetRow: View {
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
                     .font(.system(.body, design: .rounded).monospacedDigit())
-                    .foregroundStyle(Color.accentColor)
                     .frame(width: 36)
                 Stepper("", value: repsBinding)
                     .labelsHidden()
@@ -399,7 +401,6 @@ struct SetRow: View {
                         .keyboardType(.decimalPad)
                         .multilineTextAlignment(.trailing)
                         .font(.system(.body, design: .rounded).monospacedDigit())
-                        .foregroundStyle(Color.accentColor)
                         .frame(width: 50)
                     Stepper("", value: weightBinding, step: 2.5)
                         .labelsHidden()

@@ -16,6 +16,51 @@ extension Image {
         else { return Image(systemName: "app.dashed") }
         return Image(uiImage: uiImage)
     }
+
+    /// datavetenskap.com's small mark (its favicon/apple-touch-icon — the site's navbar
+    /// brand itself is live text, not an image), used to badge screens that authenticate
+    /// against its account system.
+    static var datavetenskapLogo: Image {
+        Image("DatavetenskapLogo")
+    }
+}
+
+// MARK: - Data-domain colors
+//
+// A soft, cohesive pastel palette — one color per *kind of data*, not per
+// screen. The point is recognition: the same muted mint that marks a
+// measurement on the Dashboard is the same mint used throughout the
+// Measurements tab, so a glance at the color says what you're looking at
+// before you've read a word. `Home` is deliberately neutral (a soft sky
+// blue) rather than a sixth "kind of data" — it's the aggregator, not a
+// domain of its own. Defined as asset-catalog colors (matching how
+// `AccentColor` itself is defined) rather than inline RGB literals, so
+// they're in one place if the palette ever needs retuning — Xcode
+// auto-generates `Color.domainHome`/`.domainExercises`/`.domainPlans`/
+// `.domainSession`/`.domainMeasurements` from the DomainHome/etc. colorsets
+// in Assets.xcassets, so there's no manual extension to maintain here.
+
+// MARK: - Per-page tint
+
+/// Each tab (and a couple of sub-pages reached from Home) sets this to its own
+/// domain color via `.environment(\.pageTint, ...)` on its root view. Plain
+/// `Color.accentColor` doesn't track `.tint(_:)` set by an ancestor — it always
+/// resolves to the single app-wide asset color — so anywhere that wants to vary
+/// by page reads this instead. Screens that mix domains (the Dashboard, which
+/// shows plans/sessions/measurements side by side) don't rely on this single
+/// ambient value — each element there reads its own `Color.domain...` directly
+/// instead, since "page tint" can only ever hold one color at a time. Defaults
+/// to `.accentColor` for screens (forms, auth) that intentionally stay on the
+/// app's single default color.
+private struct PageTintKey: EnvironmentKey {
+    static let defaultValue: Color = .accentColor
+}
+
+extension EnvironmentValues {
+    var pageTint: Color {
+        get { self[PageTintKey.self] }
+        set { self[PageTintKey.self] = newValue }
+    }
 }
 
 // MARK: - Card container matching purgr's rounded-card convention
@@ -59,12 +104,21 @@ struct Badge: View {
 struct StatFigure: View {
     let value: String
     let label: String
-    var color: Color = .accentColor
+    var systemImage: String?
+    /// `nil` (the default) uses whatever `.pageTint` the enclosing page set.
+    var color: Color?
+    @Environment(\.pageTint) private var pageTint
+
     var body: some View {
         VStack(spacing: 2) {
+            if let systemImage {
+                Image(systemName: systemImage)
+                    .font(.caption)
+                    .foregroundStyle(color ?? pageTint)
+            }
             Text(value)
                 .font(.system(size: 32, weight: .bold, design: .rounded))
-                .foregroundStyle(color)
+                .foregroundStyle(color ?? pageTint)
             Text(label)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -79,13 +133,16 @@ struct EmptyState: View {
     let systemImage: String
     let title: String
     let subtitle: String
-    var gradient: [Color] = [.accentColor, .accentColor.opacity(0.5)]
+    /// `nil` (the default) derives a gradient from whatever `.pageTint` the
+    /// enclosing page set, rather than the single app-wide accent color.
+    var gradient: [Color]?
+    @Environment(\.pageTint) private var pageTint
 
     var body: some View {
         VStack(spacing: 14) {
             Image(systemName: systemImage)
                 .font(.system(size: 64))
-                .foregroundStyle(LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
+                .foregroundStyle(LinearGradient(colors: gradient ?? [pageTint, pageTint.opacity(0.5)], startPoint: .topLeading, endPoint: .bottomTrailing))
             Text(title)
                 .font(.title3.bold())
             Text(subtitle)
@@ -96,6 +153,82 @@ struct EmptyState: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 48)
+    }
+}
+
+// MARK: - Leading-icon field background (login/register text fields)
+
+private struct IconFieldBackground: ViewModifier {
+    let systemName: String
+    func body(content: Content) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: systemName)
+                .foregroundStyle(.secondary)
+                .frame(width: 20)
+            content
+        }
+        .padding(14)
+        .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 14))
+    }
+}
+
+extension View {
+    func fieldIcon(_ systemName: String) -> some View {
+        modifier(IconFieldBackground(systemName: systemName))
+    }
+}
+
+// MARK: - Dismiss keyboard on tap outside a text field (number pads have no
+// built-in "Done" key, so without this there's no way to close them)
+
+/// Window-level tap recognizer that resigns first responder for any tap that
+/// doesn't land on a text field. `cancelsTouchesInView = false` and the
+/// simultaneous-recognition delegate mean it never blocks the tap it's
+/// riding along with — buttons, steppers, and list rows still get their own
+/// taps normally.
+private final class KeyboardDismissGestureRecognizer: UITapGestureRecognizer, UIGestureRecognizerDelegate {
+    init() {
+        super.init(target: nil, action: nil)
+        delegate = self
+        cancelsTouchesInView = false
+        addTarget(self, action: #selector(handleTap))
+    }
+
+    @objc private func handleTap() {
+        (view as? UIWindow)?.endEditing(true)
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        !(touch.view is UITextField)
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        true
+    }
+}
+
+private struct KeyboardDismissInstaller: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .clear
+        DispatchQueue.main.async {
+            guard let window = view.window else { return }
+            let alreadyInstalled = window.gestureRecognizers?.contains { $0 is KeyboardDismissGestureRecognizer } ?? false
+            guard !alreadyInstalled else { return }
+            window.addGestureRecognizer(KeyboardDismissGestureRecognizer())
+        }
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {}
+}
+
+extension View {
+    /// Closes the keyboard when the user taps anywhere except the focused
+    /// text field itself.
+    func dismissesKeyboardOnBackgroundTap() -> some View {
+        background(KeyboardDismissInstaller())
     }
 }
 

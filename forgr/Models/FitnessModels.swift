@@ -45,6 +45,7 @@ nonisolated struct WorkoutPlan: Identifiable, Codable, Hashable {
     let updated_at: String
     let user_id: String
     var exercises: [PlanExercise]
+    var position: Int
 }
 
 nonisolated struct PlanExerciseInput: Codable {

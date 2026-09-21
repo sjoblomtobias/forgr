@@ -1,8 +1,23 @@
 import SwiftUI
+import Charts
 
 struct MeasurementsView: View {
     @EnvironmentObject private var store: FitnessStore
     @State private var showingAdd = false
+
+    /// Oldest first, for the trend chart — the row list below stays newest-first.
+    private var weightPoints: [WeightPoint] {
+        store.measurements
+            .compactMap { measurement -> WeightPoint? in
+                guard let date = DateFormatting.date(from: measurement.created_at) else { return nil }
+                return WeightPoint(day: date, weight: measurement.weight_kg)
+            }
+            .sorted { $0.day < $1.day }
+    }
+
+    private var weightTrend: ExerciseTrend? {
+        ExerciseTrend(days: weightPoints.map(\.day), values: weightPoints.map(\.weight), unitLabel: "kg", threshold: 0.1)
+    }
 
     var body: some View {
         Group {
@@ -16,6 +31,11 @@ struct MeasurementsView: View {
                 )
             } else {
                 List {
+                    if weightPoints.count >= 2 {
+                        Section {
+                            MeasurementTrendChart(points: weightPoints, trend: weightTrend)
+                        }
+                    }
                     ForEach(store.measurements) { measurement in
                         NavigationLink(value: measurement) {
                             HStack {
@@ -37,9 +57,6 @@ struct MeasurementsView: View {
             }
         }
         .navigationTitle("Measurements")
-        .navigationDestination(for: Measurement.self) { measurement in
-            MeasurementDetailView(measurement: measurement)
-        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showingAdd = true } label: { Image(systemName: "plus") }
@@ -48,6 +65,81 @@ struct MeasurementsView: View {
         .sheet(isPresented: $showingAdd) {
             MeasurementFormView(measurement: nil)
         }
+    }
+}
+
+/// The detailed counterpart to the Dashboard's `WeightSparkline` — same data,
+/// with axis labels and a trend badge. Y-axis is zoomed to the data's own range
+/// (not from 0) since body weight only varies a few kg — starting at 0 would
+/// flatten the trend into an unreadable line hugging the top of the chart.
+struct MeasurementTrendChart: View {
+    let points: [WeightPoint]
+    let trend: ExerciseTrend?
+    @Environment(\.pageTint) private var pageTint
+
+    private var weightRange: ClosedRange<Double> {
+        let weights = points.map(\.weight)
+        guard let minW = weights.min(), let maxW = weights.max() else { return 0...1 }
+        guard minW != maxW else { return (minW - 1)...(maxW + 1) }
+        let pad = (maxW - minW) * 0.15
+        return (minW - pad)...(maxW + pad)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                HStack(spacing: 4) {
+                    Circle().fill(pageTint).frame(width: 6, height: 6)
+                    Text("Weight")
+                }
+                HStack(spacing: 4) {
+                    if let trend {
+                        Image(systemName: trend.direction.systemImage)
+                        Text(String(format: "%+.1f kg/wk", trend.perWeek))
+                    } else {
+                        Text("Not enough data")
+                    }
+                }
+                .foregroundStyle(trend?.direction.color ?? .secondary)
+                Spacer()
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+
+            Chart {
+                ForEach(points) { point in
+                    LineMark(x: .value("Date", point.day), y: .value("Weight", point.weight), series: .value("Series", "Weight"))
+                        .interpolationMethod(.catmullRom)
+                        .foregroundStyle(pageTint)
+                    PointMark(x: .value("Date", point.day), y: .value("Weight", point.weight))
+                        .foregroundStyle(pageTint)
+                }
+                if let trend {
+                    ForEach(trend.line, id: \.day) { point in
+                        LineMark(x: .value("Date", point.day), y: .value("Weight", point.value), series: .value("Series", "Weight Trend"))
+                    }
+                    .foregroundStyle(pageTint.opacity(0.5))
+                    .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
+                }
+            }
+            .chartYScale(domain: weightRange)
+            .frame(height: 160)
+            .chartXAxis {
+                AxisMarks(values: .automatic(desiredCount: 4)) { _ in
+                    AxisGridLine()
+                    AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                }
+            }
+            .chartYAxis {
+                AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { value in
+                    AxisGridLine()
+                    if let kg = value.as(Double.self) {
+                        AxisValueLabel { Text("\(Int(kg))kg") }
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 
@@ -71,17 +163,23 @@ struct MeasurementFormView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Weight") {
+                Section {
                     TextField("kg", text: $weight)
                         .keyboardType(.decimalPad)
                         .focused($isFocused)
+                } header: {
+                    Label("Weight", systemImage: "scalemass.fill")
                 }
-                Section("Body Fat (optional)") {
+                Section {
                     TextField("%", text: $bodyFat)
                         .keyboardType(.decimalPad)
+                } header: {
+                    Label("Body Fat (optional)", systemImage: "percent")
                 }
-                Section("Note (optional)") {
+                Section {
                     TextField("Note", text: $note)
+                } header: {
+                    Label("Note (optional)", systemImage: "note.text")
                 }
             }
             .navigationTitle(measurement == nil ? "New Measurement" : "Edit Measurement")
@@ -196,5 +294,11 @@ struct MeasurementDetailView: View {
 }
 
 #Preview {
-    NavigationStack { MeasurementsView() }.environmentObject(FitnessStore())
+    NavigationStack {
+        MeasurementsView()
+            .navigationDestination(for: Measurement.self) { measurement in
+                MeasurementDetailView(measurement: measurement)
+            }
+    }
+    .environmentObject(FitnessStore())
 }

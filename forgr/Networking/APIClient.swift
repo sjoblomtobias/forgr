@@ -93,6 +93,9 @@ final class APIClient {
 
     var isAuthenticated: Bool { token != nil }
 
+    /// Decoded from the stored JWT's payload — there's no separate user-info endpoint.
+    var username: String? { token.flatMap(JWTDecoder.username(fromToken:)) }
+
     // MARK: - Core request
 
     private func request<Response: Decodable>(
@@ -178,6 +181,79 @@ final class APIClient {
 
     func logout() {
         token = nil
+    }
+
+    /// Registration is invite-only and doesn't return a token — call `login` afterward
+    /// to establish a session. The server responds with an i18n key (e.g. "api.usernameTaken"),
+    /// not display text, so known register-specific failures are remapped to plain English here.
+    func register(username: String, password: String, inviteCode: String) async throws {
+        struct RegisterRequest: Encodable {
+            let username: String
+            let password: String
+            let invite_code: String
+            let agreed_to_terms: Bool
+        }
+        struct Response: Decodable { let message: String }
+        do {
+            let _: Response = try await request(
+                path: "auth/register", method: "POST",
+                body: RegisterRequest(username: username, password: password, invite_code: inviteCode, agreed_to_terms: true),
+                authenticated: false
+            )
+        } catch APIError.server(let status, let message) {
+            throw APIError.server(status: status, message: Self.humanizeRegisterError(message))
+        }
+    }
+
+    private static func humanizeRegisterError(_ raw: String) -> String {
+        let knownKeys: [String: String] = [
+            "api.inviteCodeInvalid": "That invite code is invalid or has already been used.",
+            "api.usernameTaken": "That username is already taken.",
+            "api.internalServerError": "Something went wrong on our end. Please try again.",
+            "api.invalidRequest": "Please check your details.",
+        ]
+        for (key, friendly) in knownKeys {
+            if raw == key { return friendly }
+            if raw.hasPrefix(key + ":") {
+                let rest = raw.dropFirst(key.count + 1).trimmingCharacters(in: .whitespaces)
+                return rest.isEmpty ? friendly : "\(friendly) \(rest)"
+            }
+        }
+        return raw
+    }
+
+    /// Bumps `token_version` server-side, invalidating tokens on every other device —
+    /// the response carries a fresh token for *this* session, which must replace the
+    /// stored one (it re-encodes the same username, but callers shouldn't assume that).
+    func changePassword(currentPassword: String, newPassword: String) async throws {
+        struct Body: Encodable { let current_password: String; let new_password: String }
+        struct Response: Decodable { let message: String; let token: String }
+        do {
+            let response: Response = try await request(
+                path: "account/password", method: "PATCH",
+                body: Body(current_password: currentPassword, new_password: newPassword)
+            )
+            token = response.token
+        } catch APIError.server(let status, let message) {
+            throw APIError.server(status: status, message: Self.humanizeAccountError(message))
+        }
+    }
+
+    private static func humanizeAccountError(_ raw: String) -> String {
+        let knownKeys: [String: String] = [
+            "api.invalidPassword": "That's not your current password.",
+            "api.userNotFound": "Something went wrong on our end. Please try again.",
+            "api.internalServerError": "Something went wrong on our end. Please try again.",
+            "api.invalidRequest": "Please check your details.",
+        ]
+        for (key, friendly) in knownKeys {
+            if raw == key { return friendly }
+            if raw.hasPrefix(key + ":") {
+                let rest = raw.dropFirst(key.count + 1).trimmingCharacters(in: .whitespaces)
+                return rest.isEmpty ? friendly : "\(friendly) \(rest)"
+            }
+        }
+        return raw
     }
 
     /// Throws `.unauthorized` if the token itself is invalid/expired, or any other
@@ -294,10 +370,15 @@ final class APIClient {
         return response.plan
     }
 
-    func updateWorkoutPlan(id: String, name: String, exercises: [PlanExerciseInput]) async throws -> WorkoutPlan {
-        struct Body: Encodable { let id: String; let name: String; let exercises: [PlanExerciseInput] }
+    /// `name`/`exercises` stay optional so a reorder (`position` only) doesn't need to
+    /// resend the plan's contents — mirrors `updateExerciseGroup`'s partial-update shape.
+    func updateWorkoutPlan(id: String, name: String? = nil, exercises: [PlanExerciseInput]? = nil, position: Int? = nil) async throws -> WorkoutPlan {
+        struct Body: Encodable { let id: String; let name: String?; let exercises: [PlanExerciseInput]?; let position: Int? }
         struct Response: Decodable { let plan: WorkoutPlan }
-        let response: Response = try await request(path: "workout-plans", method: "PUT", body: Body(id: id, name: name, exercises: exercises))
+        let response: Response = try await request(
+            path: "workout-plans", method: "PUT",
+            body: Body(id: id, name: name, exercises: exercises, position: position)
+        )
         return response.plan
     }
 
