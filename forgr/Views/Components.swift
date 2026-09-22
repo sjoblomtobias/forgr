@@ -240,13 +240,16 @@ struct DestructiveButton: View {
     var body: some View {
         Button(role: .destructive, action: action) {
             Text(title)
-                .font(.subheadline.weight(.semibold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .contentShape(Rectangle())
         }
-        .background(.red, in: RoundedRectangle(cornerRadius: 14))
         .foregroundStyle(.white)
         .buttonStyle(.plain)
+        // Paint the row itself red rather than a shape drawn inside it, so the
+        // corners come from the same automatic Form/Section rounding every
+        // other row gets (e.g. Change Password above) instead of a hand-drawn
+        // RoundedRectangle fighting that rounding from inside a zeroed-out row.
+        .listRowBackground(Color.red)
     }
 }
 

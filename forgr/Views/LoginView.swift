@@ -2,7 +2,6 @@ import SwiftUI
 
 struct LoginView: View {
     @EnvironmentObject private var auth: AuthStore
-    @EnvironmentObject private var deepLink: DeepLinkRouter
     @State private var username = ""
     @State private var password = ""
     @FocusState private var focusedField: Field?
@@ -106,9 +105,6 @@ struct LoginView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { focusedField = nil }
-        .navigationDestination(item: $deepLink.pendingInviteCode) { code in
-            RegisterView(inviteCode: code)
-        }
     }
 
     private var canSubmit: Bool {
@@ -125,5 +121,4 @@ struct LoginView: View {
 #Preview {
     LoginView()
         .environmentObject(AuthStore())
-        .environmentObject(DeepLinkRouter())
 }

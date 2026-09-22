@@ -43,6 +43,7 @@ struct MainTabView: View {
     @EnvironmentObject private var router: TabRouter
     @EnvironmentObject private var store: FitnessStore
     @EnvironmentObject private var themeStore: ThemeStore
+    @State private var isShowingError = false
 
     private func color(for tab: AppTab) -> Color {
         themeStore.theme.color(for: tab.domain)
@@ -73,16 +74,23 @@ struct MainTabView: View {
         }
         // Mutations apply locally and sync in the background (see FitnessStore); if a
         // sync call ends up failing, this is where that surfaces — after the fact.
+        //
+        // `isPresented` is a plain local @State rather than a computed Binding that
+        // writes into `store.errorMessage` — SwiftUI invokes that binding's setter
+        // as part of the alert's own dismiss transaction, and mutating an
+        // @EnvironmentObject from inside it triggered "Publishing changes from
+        // within view updates". The store is only cleared from the Button action.
+        .onChange(of: store.errorMessage) { _, newValue in
+            isShowingError = newValue != nil
+        }
         .alert(
             "Something Went Wrong",
-            isPresented: Binding(
-                get: { store.errorMessage != nil },
-                set: { if !$0 { store.errorMessage = nil } }
-            )
-        ) {
+            isPresented: $isShowingError,
+            presenting: store.errorMessage
+        ) { _ in
             Button("OK", role: .cancel) { store.errorMessage = nil }
-        } message: {
-            Text(store.errorMessage ?? "")
+        } message: { message in
+            Text(message)
         }
     }
 }

@@ -73,12 +73,12 @@ final class AuthStore: ObservableObject {
     /// a login to establish the session. Returns whether the whole flow succeeded, so
     /// the view can dismiss only on success.
     @discardableResult
-    func register(username: String, password: String, inviteCode: String) async -> Bool {
+    func register(username: String, password: String) async -> Bool {
         registerError = nil
         isRegistering = true
         defer { isRegistering = false }
         do {
-            try await client.register(username: username, password: password, inviteCode: inviteCode)
+            try await client.register(username: username, password: password)
             try await client.login(username: username, password: password)
             self.username = client.username
             isAuthenticated = true

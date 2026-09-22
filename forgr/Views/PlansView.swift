@@ -37,9 +37,13 @@ struct PlansView: View {
                                 PlanRow(plan: plan)
                             }
                             .swipeActions {
-                                Button(role: .destructive) {
+                                // Plain button, not `role: .destructive` — that role makes
+                                // List auto-animate the row away on tap, before the
+                                // confirmation alert (and the actual delete) happens.
+                                Button {
                                     planToDelete = plan
                                 } label: { Label("Delete", systemImage: "trash") }
+                                    .tint(.red)
                             }
                         }
                         .onMove(perform: move)
@@ -361,7 +365,7 @@ struct PlanEditorView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || rows.isEmpty)
+                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
             .sheet(isPresented: $showingExercisePicker) {

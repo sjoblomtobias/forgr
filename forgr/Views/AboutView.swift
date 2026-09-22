@@ -32,7 +32,7 @@ struct AboutView: View {
             .listRowBackground(Color.clear)
 
             Section {
-                Text("forgr signs in with your datavetenskap.com account — there's no separate signup, and access is invite-only on the web.")
+                Text("forgr signs in with your datavetenskap.com account — you can create one right from the app.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

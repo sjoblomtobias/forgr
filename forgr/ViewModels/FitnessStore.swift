@@ -246,9 +246,25 @@ final class FitnessStore: ObservableObject {
         }
     }
 
+    /// The server cascade-deletes any `plan_exercises` referencing this exercise
+    /// (`ON DELETE CASCADE`), so plans are already clean after this call succeeds —
+    /// this mirrors that locally so the plan(s) update immediately rather than
+    /// only after the next full refetch.
     func deleteExercise(_ exercise: Exercise) {
         let previousIndex = exercises.firstIndex(where: { $0.id == exercise.id })
         exercises.removeAll { $0.id == exercise.id }
+
+        let removedPlanExercises: [String: [PlanExercise]] = Dictionary(
+            uniqueKeysWithValues: plans.compactMap { plan in
+                let removed = plan.exercises.filter { $0.exercise_id == exercise.id }
+                return removed.isEmpty ? nil : (plan.id, removed)
+            }
+        )
+        for planId in removedPlanExercises.keys {
+            if let index = plans.firstIndex(where: { $0.id == planId }) {
+                plans[index].exercises.removeAll { $0.exercise_id == exercise.id }
+            }
+        }
 
         runInBackground { [self] in
             do {
@@ -256,6 +272,12 @@ final class FitnessStore: ObservableObject {
             } catch {
                 if let previousIndex, !exercises.contains(where: { $0.id == exercise.id }) {
                     exercises.insert(exercise, at: min(previousIndex, exercises.count))
+                }
+                for (planId, removed) in removedPlanExercises {
+                    if let index = plans.firstIndex(where: { $0.id == planId }) {
+                        plans[index].exercises.append(contentsOf: removed)
+                        plans[index].exercises.sort { $0.position < $1.position }
+                    }
                 }
                 errorMessage = error.localizedDescription
             }
@@ -491,6 +513,10 @@ final class FitnessStore: ObservableObject {
     /// backend until the real session comes back and this id is reconciled.
     func startSession(planId: String) {
         guard let plan = plans.first(where: { $0.id == planId }) else { return }
+        guard !plan.exercises.isEmpty else {
+            errorMessage = "Add at least one exercise to this plan before starting a workout."
+            return
+        }
         let id = Self.tempId()
         let placeholder = WorkoutSession(
             id: id, plan_id: planId, plan_name: plan.name, captured_at: Self.now(),
@@ -559,36 +585,27 @@ final class FitnessStore: ObservableObject {
         }
     }
 
-    func completeSession(sessionId: String) {
-        guard !sessionId.hasPrefix("temp-") else { return }
-        let previousActiveSession = activeSession
-        let previousIndex = sessions.firstIndex(where: { $0.id == sessionId })
-        let previousSession = previousIndex.map { sessions[$0] }
-
-        if activeSession?.id == sessionId { activeSession = nil }
-        if let previousIndex {
-            sessions[previousIndex].status = .completed
-        }
-        LiveActivityManager.end()
-
-        runInBackground { [self] in
-            do {
-                let session = try await client.completeSession(id: sessionId)
-                if let index = sessions.firstIndex(where: { $0.id == sessionId }) {
-                    sessions[index] = session
-                } else {
-                    sessions.insert(session, at: 0)
-                }
-            } catch {
-                if previousActiveSession?.id == sessionId { activeSession = previousActiveSession }
-                if let previousIndex, let previousSession, previousIndex < sessions.count, sessions[previousIndex].id == sessionId {
-                    sessions[previousIndex] = previousSession
-                }
-                if previousActiveSession?.id == sessionId {
-                    LiveActivityManager.start(planName: previousActiveSession?.plan_name ?? "", startDate: DateFormatting.date(from: previousActiveSession?.captured_at ?? "") ?? Date())
-                }
-                errorMessage = error.localizedDescription
+    /// Unlike the other mutations here, this doesn't apply an optimistic local
+    /// update and fire-and-forget in the background — the "Complete Workout"
+    /// button awaits this directly so it can show a spinner and only navigate
+    /// away once the server actually confirms completion (e.g. an empty-sets
+    /// rejection surfaces before the user gets bounced off the session).
+    @discardableResult
+    func completeSession(sessionId: String) async -> Bool {
+        guard !sessionId.hasPrefix("temp-") else { return false }
+        do {
+            let session = try await client.completeSession(id: sessionId)
+            if activeSession?.id == sessionId { activeSession = nil }
+            if let index = sessions.firstIndex(where: { $0.id == sessionId }) {
+                sessions[index] = session
+            } else {
+                sessions.insert(session, at: 0)
             }
+            LiveActivityManager.end()
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
         }
     }
 

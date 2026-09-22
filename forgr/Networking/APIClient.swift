@@ -51,7 +51,7 @@ enum APIError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .unauthorized: return "Your session has expired. Please log in again."
-        case .server(_, let message): return message
+        case .server(_, let message): return ApiMessages.translate(message)
         case .decoding(let message): return "Something went wrong reading the server's response: \(message)"
         case .network(let message): return message
         }
@@ -183,21 +183,20 @@ final class APIClient {
         token = nil
     }
 
-    /// Registration is invite-only and doesn't return a token — call `login` afterward
-    /// to establish a session. The server responds with an i18n key (e.g. "api.usernameTaken"),
+    /// Registration doesn't return a token — call `login` afterward to establish a
+    /// session. The server responds with an i18n key (e.g. "api.usernameTaken"),
     /// not display text, so known register-specific failures are remapped to plain English here.
-    func register(username: String, password: String, inviteCode: String) async throws {
+    func register(username: String, password: String) async throws {
         struct RegisterRequest: Encodable {
             let username: String
             let password: String
-            let invite_code: String
             let agreed_to_terms: Bool
         }
         struct Response: Decodable { let message: String }
         do {
             let _: Response = try await request(
                 path: "auth/register", method: "POST",
-                body: RegisterRequest(username: username, password: password, invite_code: inviteCode, agreed_to_terms: true),
+                body: RegisterRequest(username: username, password: password, agreed_to_terms: true),
                 authenticated: false
             )
         } catch APIError.server(let status, let message) {
@@ -207,7 +206,6 @@ final class APIClient {
 
     private static func humanizeRegisterError(_ raw: String) -> String {
         let knownKeys: [String: String] = [
-            "api.inviteCodeInvalid": "That invite code is invalid or has already been used.",
             "api.usernameTaken": "That username is already taken.",
             "api.internalServerError": "Something went wrong on our end. Please try again.",
             "api.invalidRequest": "Please check your details.",

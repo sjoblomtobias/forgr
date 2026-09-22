@@ -12,7 +12,6 @@ struct SplashGateView: View {
     @StateObject private var auth = AuthStore()
     @StateObject private var store = FitnessStore()
     @StateObject private var router = TabRouter()
-    @StateObject private var deepLink = DeepLinkRouter()
     @StateObject private var themeStore = ThemeStore()
     @State private var isOffline = false
     @State private var isReady = false
@@ -28,7 +27,6 @@ struct SplashGateView: View {
                     .environmentObject(auth)
                     .environmentObject(store)
                     .environmentObject(router)
-                    .environmentObject(deepLink)
                     .environmentObject(themeStore)
             } else {
                 SplashView(isOffline: isOffline, onRetry: attemptProceed)
@@ -45,14 +43,6 @@ struct SplashGateView: View {
                     router.selection = .session
                 } else {
                     pendingDeepLinkTab = .session
-                }
-            case "invite":
-                // e.g. forgr://invite?code=ABC123 — an invite link shared out-of-band.
-                // Just stash the code; LoginView (shown once cold-launch finishes, if
-                // the recipient isn't already signed in) picks it up and pushes Register.
-                if let code = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                    .queryItems?.first(where: { $0.name == "code" })?.value {
-                    deepLink.pendingInviteCode = code
                 }
             default:
                 break

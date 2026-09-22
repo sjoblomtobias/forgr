@@ -33,6 +33,7 @@ struct SessionEditor: View {
     @State private var autoSaveTask: Task<Void, Never>?
     @State private var hasUnsavedChanges = false
     @State private var showingCancelConfirm = false
+    @State private var isCompleting = false
     /// Completed sessions open read-only — every field/button stays locked until
     /// "Edit" is tapped, and edits only persist via the explicit "Save" button
     /// (no silent autosave of history). In-progress sessions are never locked;
@@ -111,13 +112,26 @@ struct SessionEditor: View {
                 Section {
                     Button {
                         save()
-                        store.completeSession(sessionId: session.id)
-                        router.selection = .session
+                        isCompleting = true
+                        Task {
+                            let succeeded = await store.completeSession(sessionId: session.id)
+                            isCompleting = false
+                            if succeeded {
+                                router.selection = .session
+                            }
+                        }
                     } label: {
-                        Text("Complete Workout")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
+                        Group {
+                            if isCompleting {
+                                ProgressView()
+                            } else {
+                                Text("Complete Workout")
+                                    .font(.headline)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
                     }
+                    .disabled(isCompleting)
                     .listRowBackground(pageTint)
                     .foregroundStyle(.white)
                 }
@@ -130,6 +144,7 @@ struct SessionEditor: View {
                             .frame(maxWidth: .infinity)
                     }
                 }
+                .disabled(isCompleting)
             }
         }
         .dismissesKeyboardOnBackgroundTap()

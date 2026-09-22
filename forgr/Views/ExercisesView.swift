@@ -241,7 +241,11 @@ struct ManageExerciseGroupsView: View {
                                 Button(role: .destructive) { pendingDelete = group } label: { Label("Delete", systemImage: "trash") }
                             }
                             .swipeActions {
-                                Button(role: .destructive) { pendingDelete = group } label: { Label("Delete", systemImage: "trash") }
+                                // Plain button, not `role: .destructive` — that role makes
+                                // List auto-animate the row away on tap, before the
+                                // confirmation alert (and the actual delete) happens.
+                                Button { pendingDelete = group } label: { Label("Delete", systemImage: "trash") }
+                                    .tint(.red)
                             }
                         case .defaultGroup:
                             // No name to edit and nothing to delete — it's not a real
@@ -447,7 +451,7 @@ struct ExerciseHistoryView: View {
     // chart materializes. That redundant work was the actual source of the
     // freeze on opening this screen. Computed once in `.task` instead, before the
     // skeleton is dismissed, so revealing the real content is just a cheap read.
-    @State private var groupedHistory: [(day: Date, sets: [ExerciseHistorySet])] = []
+    @State private var groupedHistory: [(day: Date, sessionId: String, title: String, sets: [ExerciseHistorySet])] = []
     @State private var dailyBests: [DailyBest] = []
     @State private var weightTrend: ExerciseTrend?
     @State private var repsTrend: ExerciseTrend?
@@ -464,43 +468,83 @@ struct ExerciseHistoryView: View {
         store.exercises.first(where: { $0.id == exercise.id })?.tracks_weight ?? exercise.tracks_weight
     }
 
+    /// Plans that reference this exercise — deleting it also removes it from
+    /// each of these, so the confirmation alert names them up front.
+    private var plansContainingExercise: [WorkoutPlan] {
+        store.plans.filter { plan in plan.exercises.contains { $0.exercise_id == exercise.id } }
+    }
+
+    private var deleteConfirmationMessage: String {
+        let names = plansContainingExercise.map(\.name)
+        guard !names.isEmpty else { return "This can't be undone." }
+        return "This can't be undone. It'll also be removed from \(names.joined(separator: ", "))."
+    }
+
     private func estimatedOneRepMax(_ set: ExerciseHistorySet) -> Double {
         set.weight_kg * (1 + Double(set.reps) / 30)
     }
 
-    /// Sets grouped by calendar day (most recent day first) for the list, best set
-    /// per day (oldest first) for the trend chart, and both metrics' trend lines —
-    /// all derived from `history` in one pass. "Best" is picked by estimated
-    /// 1-rep-max (Epley) rather than raw weight, so a set that traded some weight
-    /// for more reps — a legitimate form of progress — can still win the day. For
-    /// reps-only exercises (no weight logged at all) that formula degenerates to
-    /// zero for every set, so "best" falls back to simply the most reps. Weight and
-    /// reps are trended independently — a rep-only improvement (same weight, more
-    /// reps) should register as progress even when weight is flat.
+    /// Sets grouped by *session* (most recent first), both for the list and for
+    /// the trend chart's data points — all derived from `history` in one pass.
+    /// Everything here keys off session, not calendar day: two sessions logged
+    /// on the same day are still separate workouts, so merging them by day alone
+    /// both interleaved their set numbers in the list as if they were one
+    /// session, and collapsed their two "bests" into a single chart point (which
+    /// could hide the chart entirely — it needs 2+ points and a day with the
+    /// exercise's only two sessions would otherwise count as just one). Days
+    /// with more than one session get the session's start time appended to the
+    /// section title so they stay distinguishable. "Best" (per session) is
+    /// picked by estimated 1-rep-max (Epley) rather than raw weight, so a set
+    /// that traded some weight for more reps — a legitimate form of progress —
+    /// can still win. For reps-only exercises (no weight logged at all) that
+    /// formula degenerates to zero for every set, so "best" falls back to simply
+    /// the most reps. Weight and reps are trended independently — a rep-only
+    /// improvement (same weight, more reps) should register as progress even
+    /// when weight is flat.
     private func deriveHistory(_ history: [ExerciseHistorySet], tracksWeight: Bool) -> (
-        grouped: [(day: Date, sets: [ExerciseHistorySet])], bests: [DailyBest],
+        grouped: [(day: Date, sessionId: String, title: String, sets: [ExerciseHistorySet])], bests: [DailyBest],
         weightTrend: ExerciseTrend?, repsTrend: ExerciseTrend?
     ) {
         let calendar = Calendar.current
-        let byDay = Dictionary(grouping: history) { set in
-            calendar.startOfDay(for: DateFormatting.date(from: set.captured_at) ?? .distantPast)
-        }
-        let grouped = byDay
-            .map { day, sets in (day: day, sets: sets.sorted { $0.set_number < $1.set_number }) }
-            .sorted { $0.day > $1.day }
 
-        let bests: [DailyBest] = byDay
-            .compactMap { day, sets -> DailyBest? in
+        struct SessionGroup { let day: Date; let start: Date; let sessionId: String; let sets: [ExerciseHistorySet] }
+        let sessionGroups: [SessionGroup] = Dictionary(grouping: history, by: \.session_id)
+            .map { sessionId, sets in
+                let sorted = sets.sorted { $0.set_number < $1.set_number }
+                let start = sorted.map { DateFormatting.date(from: $0.captured_at) ?? .distantPast }.min() ?? .distantPast
+                return SessionGroup(day: calendar.startOfDay(for: start), start: start, sessionId: sessionId, sets: sorted)
+            }
+            .sorted { $0.start > $1.start }
+
+        let sessionsPerDay = Dictionary(grouping: sessionGroups, by: \.day).mapValues(\.count)
+        let grouped = sessionGroups.map { group -> (day: Date, sessionId: String, title: String, sets: [ExerciseHistorySet]) in
+            let dayText = DateFormatting.dayOnly.string(from: group.day)
+            let title = (sessionsPerDay[group.day] ?? 1) > 1
+                ? "\(dayText) · \(DateFormatting.timeOnly.string(from: group.start))"
+                : dayText
+            return (day: group.day, sessionId: group.sessionId, title: title, sets: group.sets)
+        }
+
+        let bests: [DailyBest] = sessionGroups
+            .compactMap { group -> DailyBest? in
                 let best = tracksWeight
-                    ? sets.max(by: { estimatedOneRepMax($0) < estimatedOneRepMax($1) })
-                    : sets.max(by: { $0.reps < $1.reps })
+                    ? group.sets.max(by: { estimatedOneRepMax($0) < estimatedOneRepMax($1) })
+                    : group.sets.max(by: { $0.reps < $1.reps })
                 guard let best else { return nil }
-                return DailyBest(day: day, bestWeight: best.weight_kg, repsAtBest: best.reps)
+                return DailyBest(day: group.start, bestWeight: best.weight_kg, repsAtBest: best.reps)
             }
             .sorted { $0.day < $1.day }
 
-        let weightTrend = ExerciseTrend(days: bests.map(\.day), values: bests.map(\.bestWeight), unitLabel: "kg", threshold: 0.25)
-        let repsTrend = ExerciseTrend(days: bests.map(\.day), values: bests.map { Double($0.repsAtBest) }, unitLabel: "reps", threshold: 0.25)
+        // The trend regression needs day-granularity x-values, not the bests' precise
+        // session timestamps: two sessions minutes apart give the regression a
+        // near-zero time delta, which blows up its per-week extrapolation (e.g. a
+        // 10-rep gain in 5 minutes projects to +2000/day). Rounding to the day
+        // means same-day sessions correctly contribute no slope information on
+        // their own, while the plotted points (`bests`) keep full session
+        // precision so same-day sessions still render as distinct points.
+        let trendDays = bests.map { calendar.startOfDay(for: $0.day) }
+        let weightTrend = ExerciseTrend(days: trendDays, values: bests.map(\.bestWeight), unitLabel: "kg", threshold: 0.25)
+        let repsTrend = ExerciseTrend(days: trendDays, values: bests.map { Double($0.repsAtBest) }, unitLabel: "reps", threshold: 0.25)
 
         return (grouped, bests, weightTrend, repsTrend)
     }
@@ -540,8 +584,8 @@ struct ExerciseHistoryView: View {
                         )
                     }
                 }
-                ForEach(groupedHistory, id: \.day) { day, sets in
-                    Section(DateFormatting.dayOnly.string(from: day)) {
+                ForEach(groupedHistory, id: \.sessionId) { _, _, title, sets in
+                    Section(title) {
                         ForEach(sets) { set in
                             HStack {
                                 Text("Set \(set.set_number)").font(.subheadline.weight(.medium))
@@ -580,7 +624,7 @@ struct ExerciseHistoryView: View {
                 dismiss()
             }
         } message: {
-            Text("This can't be undone.")
+            Text(deleteConfirmationMessage)
         }
         .task {
             do {
@@ -698,17 +742,16 @@ struct ExerciseTrendChart: View {
 
     private var repsAxisTicks: [Int] { [0, niceRepsMax / 2, niceRepsMax] }
 
+    @ViewBuilder
     private func trendBadge(_ trend: ExerciseTrend?) -> some View {
-        HStack(spacing: 4) {
-            if let trend {
+        if let trend {
+            HStack(spacing: 4) {
                 Image(systemName: trend.direction.systemImage)
                 Text(String(format: "%+.1f %@/wk", trend.perWeek, trend.unitLabel))
-            } else {
-                Text("Not enough data")
             }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(trend.direction.color)
         }
-        .font(.caption.weight(.semibold))
-        .foregroundStyle(trend?.direction.color ?? .secondary)
     }
 
     var body: some View {

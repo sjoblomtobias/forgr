@@ -6,21 +6,10 @@ struct RegisterView: View {
     @State private var username = ""
     @State private var password = ""
     @State private var confirmPassword = ""
-    @State private var inviteCode: String
     @State private var agreedToTerms = false
     @FocusState private var focusedField: Field?
 
-    enum Field { case username, password, confirmPassword, inviteCode }
-
-    /// `inviteCode` pre-fills the field, e.g. from a `forgr://invite?code=...` deep link.
-    init(inviteCode: String = "") {
-        _inviteCode = State(initialValue: Self.sanitizeInviteCode(inviteCode))
-    }
-
-    /// Invite codes are 6 chars, A-Z0-9 — normalize rather than rejecting input outright.
-    private static func sanitizeInviteCode(_ raw: String) -> String {
-        String(raw.uppercased().filter { $0.isLetter || $0.isNumber }.prefix(6))
-    }
+    enum Field { case username, password, confirmPassword }
 
     var body: some View {
         ScrollView {
@@ -43,10 +32,6 @@ struct RegisterView: View {
                     }
                     Text("Create your datavetenskap.com account")
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                    Text("Registration is invite-only — enter the code you were given.")
-                        .font(.footnote)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
@@ -79,8 +64,8 @@ struct RegisterView: View {
                     SecureField("Confirm Password", text: $confirmPassword)
                         .textContentType(.newPassword)
                         .focused($focusedField, equals: .confirmPassword)
-                        .submitLabel(.next)
-                        .onSubmit { focusedField = .inviteCode }
+                        .submitLabel(.go)
+                        .onSubmit { Task { await submit() } }
                         .fieldIcon("lock.fill")
 
                     if !confirmPassword.isEmpty && !isConfirmPasswordValid {
@@ -89,17 +74,6 @@ struct RegisterView: View {
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
-
-                    TextField("Invite Code", text: $inviteCode)
-                        .textInputAutocapitalization(.characters)
-                        .autocorrectionDisabled()
-                        .focused($focusedField, equals: .inviteCode)
-                        .submitLabel(.go)
-                        .onSubmit { Task { await submit() } }
-                        .onChange(of: inviteCode) { _, newValue in
-                            inviteCode = Self.sanitizeInviteCode(newValue)
-                        }
-                        .fieldIcon("ticket.fill")
                 }
                 .padding(.horizontal, 24)
 
@@ -165,18 +139,14 @@ struct RegisterView: View {
         !confirmPassword.isEmpty && confirmPassword == password
     }
 
-    private var isInviteCodeValid: Bool {
-        inviteCode.count == 6
-    }
-
     private var canSubmit: Bool {
-        isUsernameValid && isPasswordValid && isConfirmPasswordValid && isInviteCodeValid && agreedToTerms
+        isUsernameValid && isPasswordValid && isConfirmPasswordValid && agreedToTerms
     }
 
     private func submit() async {
         guard canSubmit else { return }
         focusedField = nil
-        await auth.register(username: username, password: password, inviteCode: inviteCode)
+        await auth.register(username: username, password: password)
     }
 }
 

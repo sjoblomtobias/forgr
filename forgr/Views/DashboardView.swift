@@ -317,11 +317,19 @@ struct HistoryListView: View {
                             }
                         }
                         .swipeActions {
-                            Button(role: .destructive) {
+                            // No `role: .destructive` here — that role makes List
+                            // auto-animate the row away as soon as it's tapped,
+                            // before the confirmation alert even appears. Since the
+                            // actual deletion only happens once the user confirms,
+                            // that made the row vanish then snap back. `.tint(.red)`
+                            // keeps the same destructive look without the
+                            // auto-remove behavior.
+                            Button {
                                 sessionToDelete = session
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
+                            .tint(.red)
                         }
                     }
                 }

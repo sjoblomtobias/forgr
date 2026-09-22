@@ -49,8 +49,6 @@ struct ProfileView: View {
 
                 Section {
                     DestructiveButton(title: "Log Out") { showingLogoutConfirm = true }
-                        .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
                 }
             }
             .navigationTitle("Profile")
@@ -66,8 +64,11 @@ struct ProfileView: View {
             .alert("Log Out?", isPresented: $showingLogoutConfirm) {
                 Button("Cancel", role: .cancel) {}
                 Button("Log Out", role: .destructive) {
+                    // No explicit dismiss() here: auth.logout() flips isAuthenticated,
+                    // which makes RootView swap MainTabView (and this sheet along with
+                    // it) out for LoginView. Calling dismiss() too raced that structural
+                    // teardown and could hang mid-transition.
                     auth.logout()
-                    dismiss()
                 }
             } message: {
                 Text("You'll need to sign in again to access your data.")

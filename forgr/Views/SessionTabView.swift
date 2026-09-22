@@ -54,24 +54,26 @@ struct SessionTabView: View {
 
                         VStack(spacing: 10) {
                             ForEach(store.plans) { plan in
+                                let isEmpty = plan.exercises.isEmpty
                                 Button {
                                     store.startSession(planId: plan.id)
                                 } label: {
                                     HStack {
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(plan.name).font(.subheadline.weight(.semibold))
-                                            Text("\(plan.exercises.count) exercises")
+                                            Text(isEmpty ? "No exercises yet" : "\(plan.exercises.count) exercises")
                                                 .font(.caption)
                                                 .foregroundStyle(.secondary)
                                         }
                                         Spacer()
                                         Image(systemName: "play.circle.fill")
                                             .font(.title2)
-                                            .foregroundStyle(pageTint)
+                                            .foregroundStyle(isEmpty ? Color.secondary : pageTint)
                                     }
                                     .cardStyle(cornerRadius: 16)
                                 }
                                 .buttonStyle(.plain)
+                                .disabled(isEmpty)
                             }
                         }
                         .padding(.horizontal)
